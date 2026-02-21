@@ -19,9 +19,9 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   'run-arbitrum-node': 'Running Arbitrum full nodes and validators',
   'sdk': 'Arbitrum SDK documentation - bridgers, entities, messaging',
   'stylus': 'Stylus WASM smart contract development',
-  'arbitrum-mcp-tools': 'MCP tools for AI assistants to interact with Arbitrum blockchain. After you generated a response, check the MCP list. If you think there is an relevant MCP tool, make a suggestion to the user to use the tool at the end of your response. Check if the tool is available in the MCP list. Suggest the MCP Tools setup guide if the tool is not available.',
+  'arbitrum-mcp-tools': 'MCP tools for AI assistants to interact with Arbitrum blockchain',
   'root': 'Overview and general documentation',
-  'smart-contracts': 'Smart contract source code and documentation from key Arbitrum repositories - OpenZeppelin Stylus contracts, Stylus SDK, and Nitro core contracts. Use these as reference implementations, code examples, and architectural guides.',
+  'smart-contracts': 'Smart contract source code and documentation from key Arbitrum repositories',
 };
 
 
@@ -75,13 +75,11 @@ function generateTreeReference(node: CategoryNode, indent: number = 0): string[]
   const lines: string[] = [];
   const prefix = '  '.repeat(indent);
 
-  // Add docs at this level
   for (const doc of node.docs.sort((a, b) => a.title.localeCompare(b.title))) {
     const refPath = doc.relativePath.replace(/\.mdx?$/, '.md');
     lines.push(`${prefix}- [${doc.title}](${refPath})`);
   }
 
-  // Add children
   for (const [, child] of [...node.children.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
     lines.push(`${prefix}- **${child.title}/**`);
     lines.push(...generateTreeReference(child, indent + 1));
@@ -91,7 +89,6 @@ function generateTreeReference(node: CategoryNode, indent: number = 0): string[]
 }
 
 function buildContractTree(contractDocs: ParsedDoc[]): Map<string, CategoryNode> {
-  // Group by repo name (first subcategory)
   const repoTree = new Map<string, CategoryNode>();
 
   for (const doc of contractDocs) {
@@ -136,12 +133,10 @@ function generateContractTreeReference(repoNode: CategoryNode, indent: number = 
   const lines: string[] = [];
   const prefix = '  '.repeat(indent);
 
-  // Add docs at this level
   for (const doc of repoNode.docs.sort((a, b) => a.title.localeCompare(b.title))) {
     lines.push(`${prefix}- [${doc.title}](${doc.relativePath})`);
   }
 
-  // Add children
   for (const [, child] of [...repoNode.children.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
     lines.push(`${prefix}- **${child.title}/**`);
     lines.push(...generateContractTreeReference(child, indent + 1));
@@ -150,15 +145,353 @@ function generateContractTreeReference(repoNode: CategoryNode, indent: number = 
   return lines;
 }
 
+// Count total docs in a category node (including children)
+function countDocs(node: CategoryNode): number {
+  let count = node.docs.length;
+  for (const [, child] of node.children) {
+    count += countDocs(child);
+  }
+  return count;
+}
+
+// Get top-level subcategory names for a category
+function getSubcategoryNames(node: CategoryNode): string[] {
+  return [...node.children.keys()].sort().map(formatTitle);
+}
+
+// ============================================================================
+// NAV FILE GENERATORS (Progressive Disclosure)
+// ============================================================================
+
+function generateNavDocs(docs: ParsedDoc[], includeMcp: boolean): string {
+  const tree = buildCategoryTree(docs);
+  const lines: string[] = [];
+
+  lines.push('# Documentation File Index');
+  lines.push('');
+  lines.push('Complete file listing for all Arbitrum documentation. Use this to find specific files by topic.');
+  lines.push('');
+
+  const sortedCategories = [...tree.entries()].sort((a, b) => {
+    if (a[0] === 'root') return -1;
+    if (b[0] === 'root') return 1;
+    return a[0].localeCompare(b[0]);
+  });
+
+  for (const [categoryName, categoryNode] of sortedCategories) {
+    const description = CATEGORY_DESCRIPTIONS[categoryName] || '';
+    lines.push(`## ${categoryNode.title}`);
+    if (description) {
+      lines.push(`*${description}*`);
+    }
+    lines.push('');
+    lines.push(...generateTreeReference(categoryNode));
+    lines.push('');
+  }
+
+  if (includeMcp) {
+    lines.push('## Arbitrum MCP Tools');
+    lines.push(`*${CATEGORY_DESCRIPTIONS['arbitrum-mcp-tools']}*`);
+    lines.push('');
+    lines.push('- [Arbitrum MCP Tools Documentation](arbitrum-mcp-tools/index.md)');
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+function generateNavContracts(
+  contractDocs: ParsedDoc[],
+  repoConfig: RepoConfig
+): string {
+  const contractTree = buildContractTree(contractDocs);
+  const repoNode = contractTree.get(repoConfig.name);
+  if (!repoNode) return '';
+
+  const lines: string[] = [];
+
+  lines.push(`# ${repoConfig.displayName}`);
+  lines.push('');
+  lines.push(`*${repoConfig.description}*`);
+  lines.push('');
+
+  // Add table of contents for large files
+  const topDirs = [...repoNode.children.keys()].sort();
+  if (topDirs.length > 0) {
+    lines.push('## Contents');
+    for (const dir of topDirs) {
+      const child = repoNode.children.get(dir)!;
+      lines.push(`- ${child.title} (${countDocs(child)} files)`);
+    }
+    lines.push('');
+  }
+
+  lines.push('## File Index');
+  lines.push('');
+  lines.push(...generateContractTreeReference(repoNode));
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+// ============================================================================
+// MAIN SKILL.MD GENERATOR (Concise, <500 lines)
+// ============================================================================
+
+function generateSkillMd(
+  docs: ParsedDoc[],
+  includeMcp: boolean,
+  contractDocs: ParsedDoc[],
+  repoConfigs: RepoConfig[]
+): string {
+  const tree = buildCategoryTree(docs);
+  const lines: string[] = [];
+
+  // --- YAML Frontmatter (improved description with trigger keywords) ---
+  lines.push('---');
+  lines.push('name: arbitrum-skills');
+  lines.push('description: Provides Arbitrum L2 blockchain development documentation including Stylus WASM smart contracts (Rust), token bridging (ETH, ERC-20, USDC), Orbit chain deployment, node operations (full node, validator, sequencer), gas estimation, cross-chain messaging, BoLD protocol, Timeboost, ArbOS upgrades, and OpenZeppelin/Nitro contract references. Use when the user mentions Arbitrum, Stylus, Orbit, Nitro, ArbOS, or L2 scaling.');
+  lines.push('---');
+  lines.push('');
+
+  // --- Title ---
+  lines.push('# Arbitrum Development Knowledge Base');
+  lines.push('');
+
+  // --- Search Instructions (concise) ---
+  lines.push('## Search Instructions');
+  lines.push('');
+  lines.push('Always search and read files in this skill folder before answering. Do not rely on prior knowledge.');
+  lines.push('Extract exact values (chain IDs, RPC URLs, addresses, commands, code) from the docs.');
+  lines.push('');
+  lines.push('**Context management:** Start with narrow grep searches. Use the topic navigation below to identify target files before searching. Read selectively — avoid loading entire folders.');
+  lines.push('');
+
+  // --- Response Guidelines (concise) ---
+  lines.push('## Response Guidelines');
+  lines.push('');
+  lines.push('- Use **section headers**, **tables**, **bullet points**, and **code blocks** for clarity');
+  lines.push('- Put the most important information first (answer at top, details below)');
+  lines.push('- Follow correct step order for procedural responses');
+  lines.push('- Use **bold** for key values the user needs to spot quickly');
+  lines.push('');
+
+  // --- Decision Guide ---
+  lines.push('## Decision Guide');
+  lines.push('');
+  lines.push('Route to the right files based on what the user needs:');
+  lines.push('');
+  lines.push('| User wants to... | Start with |');
+  lines.push('|---|---|');
+  lines.push('| **Write a Solidity smart contract** | `build-decentralized-apps/01-quickstart-solidity-remix.md` |');
+  lines.push('| **Write a Rust/Stylus contract** | `stylus/quickstart.md`, then `stylus/overview.md` |');
+  lines.push('| **Bridge tokens (ETH/ERC-20)** | `arbitrum-bridge/01-quickstart.md` |');
+  lines.push('| **Bridge tokens programmatically** | `build-decentralized-apps/token-bridging/bridge-tokens-programmatically/01-get-started.md` |');
+  lines.push('| **Bridge USDC** | `arbitrum-bridge/02-usdc-arbitrum-one.md` |');
+  lines.push('| **Run a full node** | `run-arbitrum-node/02-run-full-node.md` |');
+  lines.push('| **Run a validator** | `run-arbitrum-node/more-types/02-run-validator-node.md` |');
+  lines.push('| **Run an archive node** | `run-arbitrum-node/more-types/01-run-archive-node.md` |');
+  lines.push('| **Launch an Orbit chain** | `launch-arbitrum-chain/01-a-gentle-introduction.md` |');
+  lines.push('| **Deploy an Orbit chain** | `launch-arbitrum-chain/03-deploy-an-arbitrum-chain/02-deploying-an-arbitrum-chain.md` |');
+  lines.push('| **Estimate gas** | `build-decentralized-apps/02-how-to-estimate-gas.md` |');
+  lines.push('| **Understand Arbitrum architecture** | `how-arbitrum-works/01-inside-arbitrum-nitro.md` |');
+  lines.push('| **Use cross-chain messaging** | `build-decentralized-apps/04-cross-chain-messaging.md` |');
+  lines.push('| **Get chain IDs / RPC URLs** | `for-devs/dev-tools-and-resources/chain-info.md` |');
+  lines.push('| **Use oracles** | `build-decentralized-apps/oracles/01-overview.md` |');
+  lines.push('| **Use precompiles** | `build-decentralized-apps/precompiles/01-overview.md` |');
+  lines.push('| **Use the SDK** | `sdk/index.md` |');
+  lines.push('| **Understand BoLD** | `how-arbitrum-works/bold/gentle-introduction.md` |');
+  lines.push('| **Use Timeboost** | `how-arbitrum-works/timeboost/gentle-introduction.md` |');
+  lines.push('| **Upgrade ArbOS** | `launch-arbitrum-chain/02-configure-your-chain/common/validation-and-security/13-arbos-upgrade.md` |');
+  lines.push('| **Find contract source code** | See [NAV-smart-contracts.md](NAV-smart-contracts.md) |');
+  lines.push('| **Find OpenZeppelin Stylus examples** | See [NAV-openzeppelin-stylus.md](NAV-openzeppelin-stylus.md) |');
+  lines.push('| **Find Stylus SDK source/examples** | See [NAV-stylus-sdk.md](NAV-stylus-sdk.md) |');
+  lines.push('| **Find Nitro contract source** | See [NAV-nitro-contracts.md](NAV-nitro-contracts.md) |');
+  lines.push('');
+
+  // --- Quick Search Patterns ---
+  lines.push('## Quick Search');
+  lines.push('');
+  lines.push('Find specific content fast:');
+  lines.push('');
+  lines.push('```');
+  lines.push('# Chain IDs, RPC URLs, network info');
+  lines.push('grep -ri "chain.*id\\|rpc\\|endpoint" for-devs/dev-tools-and-resources/');
+  lines.push('');
+  lines.push('# Stylus contract patterns');
+  lines.push('grep -ri "sol_storage\\|#\\[public\\]\\|#\\[entrypoint\\]" stylus/');
+  lines.push('');
+  lines.push('# Bridge addresses and contracts');
+  lines.push('grep -ri "gateway\\|router\\|bridge.*address" arbitrum-bridge/ build-decentralized-apps/token-bridging/');
+  lines.push('');
+  lines.push('# Gas and fees');
+  lines.push('grep -ri "gas.*price\\|l1.*fee\\|l2.*fee\\|basefee" build-decentralized-apps/ how-arbitrum-works/deep-dives/');
+  lines.push('');
+  lines.push('# Node configuration');
+  lines.push('grep -ri "docker\\|--chain\\|--parent-chain" run-arbitrum-node/');
+  lines.push('');
+  lines.push('# ArbOS versions and upgrades');
+  lines.push('grep -ri "arbos.*[0-9]" run-arbitrum-node/arbos-releases/ notices/');
+  lines.push('```');
+  lines.push('');
+
+  // --- Topic Navigation (compact summaries, not full file lists) ---
+  lines.push('## Topic Navigation');
+  lines.push('');
+  lines.push('For the complete file listing of all documentation, see [NAV-docs.md](NAV-docs.md).');
+  lines.push('');
+
+  const sortedCategories = [...tree.entries()].sort((a, b) => {
+    if (a[0] === 'root') return -1;
+    if (b[0] === 'root') return 1;
+    return a[0].localeCompare(b[0]);
+  });
+
+  for (const [categoryName, categoryNode] of sortedCategories) {
+    const description = CATEGORY_DESCRIPTIONS[categoryName] || '';
+    const docCount = countDocs(categoryNode);
+    const subcats = getSubcategoryNames(categoryNode);
+
+    lines.push(`### ${categoryNode.title}`);
+    if (description) {
+      lines.push(`*${description}* (${docCount} files)`);
+    }
+    lines.push('');
+
+    // Show top-level docs directly (these are the main entry points)
+    if (categoryNode.docs.length > 0) {
+      for (const doc of categoryNode.docs.sort((a, b) => a.title.localeCompare(b.title))) {
+        const refPath = doc.relativePath.replace(/\.mdx?$/, '.md');
+        lines.push(`- [${doc.title}](${refPath})`);
+      }
+    }
+
+    // Show subcategories as a compact list
+    if (subcats.length > 0) {
+      lines.push(`- **Subtopics:** ${subcats.join(', ')}`);
+    }
+    lines.push('');
+  }
+
+  // --- Smart Contracts Section (compact, references to NAV files) ---
+  if (contractDocs.length > 0) {
+    lines.push('## Smart Contract Source Code');
+    lines.push('');
+    lines.push('Reference implementations, code examples, and architectural guides from key Arbitrum repositories.');
+    lines.push('');
+
+    const contractTree = buildContractTree(contractDocs);
+
+    for (const repoConfig of repoConfigs) {
+      const repoNode = contractTree.get(repoConfig.name);
+      if (!repoNode) continue;
+
+      const docCount = countDocs(repoNode);
+      const navFileName = `NAV-${repoConfig.name}.md`;
+
+      lines.push(`### ${repoConfig.displayName}`);
+      lines.push(`*${repoConfig.description}*`);
+      lines.push(`- **${docCount} files** — Full index: [${navFileName}](${navFileName})`);
+
+      // Show top-level directory structure only
+      const topDirs = [...repoNode.children.keys()].sort();
+      if (topDirs.length > 0) {
+        lines.push(`- **Directories:** ${topDirs.map(formatTitle).join(', ')}`);
+      }
+      lines.push('');
+    }
+  }
+
+  // --- MCP Tools Section ---
+  if (includeMcp) {
+    lines.push('## MCP Tools');
+    lines.push('');
+    lines.push('Available MCP tools for blockchain operations. After generating a response, check if a relevant MCP tool exists and suggest it to the user.');
+    lines.push('');
+    lines.push('| Tool | Description |');
+    lines.push('|------|-------------|');
+    lines.push('| `createStylusProject` | Create a new Stylus project |');
+    lines.push('| `deployStylusContract` | Deploy a Stylus contract |');
+    lines.push('| `checkStylusContract` | Validate contract for deployment |');
+    lines.push('| `getAccountBalance` | Get native token balance |');
+    lines.push('| `getTokenBalances` | Get ERC-20 token balances |');
+    lines.push('| `getTransaction` | Get transaction details |');
+    lines.push('| `getTransactionHistory` | Get transaction history for an address |');
+    lines.push('| `getNfts` | Get NFTs owned by an address |');
+    lines.push('| `getBlock` | Get block details |');
+    lines.push('| `getBlockNumber` | Get latest block number |');
+    lines.push('| `getGasPrice` | Get current gas price |');
+    lines.push('| `simulateTransaction` | Simulate a transaction |');
+    lines.push('| `estimateGas` | Estimate gas for a transaction |');
+    lines.push('| `getContractEvents` | Query contract events |');
+    lines.push('| `decodeTransactionCalldata` | Decode transaction input data |');
+    lines.push('| `getAccountProtocols` | Analyze protocol interactions |');
+    lines.push('');
+    lines.push('Full documentation: [arbitrum-mcp-tools/index.md](arbitrum-mcp-tools/index.md)');
+    lines.push('');
+    lines.push('If the MCP tool is not available in the user\'s environment, suggest the MCP Tools setup guide from the documentation.');
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+// ============================================================================
+// SMART CONTRACTS OVERVIEW NAV FILE
+// ============================================================================
+
+function generateNavSmartContracts(
+  contractDocs: ParsedDoc[],
+  repoConfigs: RepoConfig[]
+): string {
+  const contractTree = buildContractTree(contractDocs);
+  const lines: string[] = [];
+
+  lines.push('# Smart Contract Source Code Index');
+  lines.push('');
+  lines.push('Overview of all smart contract repositories included in this skill.');
+  lines.push('');
+
+  for (const repoConfig of repoConfigs) {
+    const repoNode = contractTree.get(repoConfig.name);
+    if (!repoNode) continue;
+
+    const docCount = countDocs(repoNode);
+    const navFileName = `NAV-${repoConfig.name}.md`;
+
+    lines.push(`## ${repoConfig.displayName}`);
+    lines.push(`*${repoConfig.description}*`);
+    lines.push('');
+    lines.push(`**${docCount} files** — Detailed index: [${navFileName}](${navFileName})`);
+    lines.push('');
+
+    // Show top-level structure
+    const topDirs = [...repoNode.children.keys()].sort();
+    if (topDirs.length > 0) {
+      lines.push('| Directory | Files |');
+      lines.push('|-----------|-------|');
+      for (const dir of topDirs) {
+        const child = repoNode.children.get(dir)!;
+        lines.push(`| ${child.title} | ${countDocs(child)} |`);
+      }
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// ============================================================================
+// FILE WRITING
+// ============================================================================
+
 async function writeDocFiles(docs: ParsedDoc[], skillDir: string): Promise<void> {
   for (const doc of docs) {
-    // Write directly to skill folder (no reference/ subfolder)
     const outputPath = path.join(skillDir, doc.relativePath.replace(/\.mdx$/, '.md'));
     const outputDirPath = path.dirname(outputPath);
 
     await fs.mkdir(outputDirPath, { recursive: true });
 
-    // Don't add a heading if content already starts with one
     let content: string;
     if (doc.content.startsWith('# ')) {
       content = doc.content;
@@ -187,145 +520,9 @@ async function fetchMcpToolsDocs(): Promise<string | null> {
   }
 }
 
-function generateSkillMd(
-  docs: ParsedDoc[],
-  includeMcp: boolean,
-  contractDocs: ParsedDoc[],
-  repoConfigs: RepoConfig[]
-): string {
-  const tree = buildCategoryTree(docs);
-  const lines: string[] = [];
-
-  // YAML Frontmatter
-  lines.push('---');
-  lines.push('name: arbitrum-skills');
-  lines.push('description: Comprehensive Arbitrum blockchain development knowledge - Layer 2 scaling, Stylus WASM contracts, token bridging, node operations, Orbit chains, and dApp development. Use for any Arbitrum-related questions.');
-  lines.push('---');
-  lines.push('');
-
-  // Main content
-  lines.push('# Arbitrum Development Knowledge Base');
-  lines.push('');
-  lines.push('This skill provides comprehensive documentation for Arbitrum blockchain development.');
-  lines.push('');
-  lines.push('## CRITICAL: Search Instructions');
-  lines.push('');
-  lines.push('**DO NOT answer from memory.** You MUST search and read the actual files in this skill folder.');
-  lines.push('');
-  lines.push('For EVERY question:');
-  lines.push('1. **Search for keywords** using Grep/search across this skill folder');
-  lines.push('2. **Read relevant files** as much as you can find before answering');
-  lines.push('3. **Extract exact values** from the docs: chain IDs, RPC URLs, addresses, commands, code snippets');
-  lines.push('');
-  lines.push('**Your answer quality depends on how thoroughly you search the files, not on prior knowledge.**');
-  lines.push('');
-  lines.push('## Response Structure Guidelines');
-  lines.push('');
-  lines.push('Your response can be long, but it MUST be visually organized to not overwhelm the user:');
-  lines.push('- Must follow a correct timeline for responses including steps.');
-  lines.push('- Use **clear section headers** to break up content');
-  lines.push('- Use **tables** for comparing options, listing values (chain IDs, RPCs, etc.)');
-  lines.push('- Use **bullet points** for lists, not long paragraphs');
-  lines.push('- Use **code blocks** for commands, addresses, and code snippets');
-  lines.push('- Put the **most important information first** (summary/answer at top, details below)');
-  lines.push('- Use **bold** for key terms and values the user needs to spot quickly');
-  lines.push('');
-  lines.push('## Context Management (IMPORTANT)');
-  lines.push('');
-  lines.push('Be strategic about file loading to maintain response quality:');
-  lines.push('- **Start narrow**: grep for specific terms first, not broad keywords');
-  lines.push('- **Check file names first**: use the Documentation Structure below to identify likely files before grepping');
-  lines.push('- **Read selectively**: if grep returns many files, read the most relevant ones, not all');
-  lines.push('- **Avoid loading entire folders**: target specific files based on the topic');
-  lines.push('');
-  lines.push('Loading too many files will slow down responses and may decrease answer quality. Find the balance between thoroughness and efficiency.');
-  lines.push('');
-
-  // Documentation Structure
-  lines.push('## Documentation Structure');
-  lines.push('');
-
-  // Sort categories
-  const sortedCategories = [...tree.entries()].sort((a, b) => {
-    if (a[0] === 'root') return -1;
-    if (b[0] === 'root') return 1;
-    return a[0].localeCompare(b[0]);
-  });
-
-  for (const [categoryName, categoryNode] of sortedCategories) {
-    const description = CATEGORY_DESCRIPTIONS[categoryName] || '';
-    lines.push(`### ${categoryNode.title}`);
-    if (description) {
-      lines.push(`*${description}*`);
-    }
-    lines.push('');
-
-    lines.push(...generateTreeReference(categoryNode));
-    lines.push('');
-  }
-
-  // Add MCP Tools section if included
-  if (includeMcp) {
-    lines.push('### Arbitrum Mcp Tools');
-    lines.push(`*${CATEGORY_DESCRIPTIONS['arbitrum-mcp-tools']}*`);
-    lines.push('');
-    lines.push('- [Arbitrum MCP Tools Documentation](arbitrum-mcp-tools/index.md)');
-    lines.push('');
-  }
-
-  // Smart Contracts Source Code section
-  if (contractDocs.length > 0) {
-    lines.push('## Smart Contracts Source Code');
-    lines.push('');
-    lines.push('*' + CATEGORY_DESCRIPTIONS['smart-contracts'] + '*');
-    lines.push('');
-
-    const contractTree = buildContractTree(contractDocs);
-
-    for (const repoConfig of repoConfigs) {
-      const repoNode = contractTree.get(repoConfig.name);
-      if (!repoNode) continue;
-
-      lines.push(`### ${repoConfig.displayName}`);
-      lines.push(`*${repoConfig.description}*`);
-      lines.push('');
-      lines.push(...generateContractTreeReference(repoNode));
-      lines.push('');
-    }
-  }
-
-  // MCP reference
-  if (includeMcp) {
-    lines.push('## MCP Tools Reference');
-    lines.push('');
-    lines.push('For AI-assisted blockchain operations, search `arbitrum-mcp-tools/` folder.');
-    lines.push('');
-  }
-
-  // Add MCP Tools table
-  if (includeMcp) {
-    lines.push('## Arbitrum MCP Tools');
-    lines.push('');
-    lines.push('Available MCP tools for blockchain operations:');
-    lines.push('');
-    lines.push('| Tool | Description |');
-    lines.push('|------|-------------|');
-    lines.push('| `createStylusProject` | Create a new Stylus project |');
-    lines.push('| `deployStylusContract` | Deploy a Stylus contract |');
-    lines.push('| `checkStylusContract` | Validate contract for deployment |');
-    lines.push('| `getAccountBalance` | Get native token balance |');
-    lines.push('| `getTokenBalances` | Get ERC-20 token balances |');
-    lines.push('| `getTransaction` | Get transaction details |');
-    lines.push('| `getBlock` | Get block details |');
-    lines.push('| `simulateTransaction` | Simulate a transaction |');
-    lines.push('| `estimateGas` | Estimate gas for a transaction |');
-    lines.push('');
-    lines.push('Full documentation: [arbitrum-mcp-tools/index.md](arbitrum-mcp-tools/index.md)');
-    lines.push('');
-  }
-
-  return lines.join('\n');
-}
+// ============================================================================
+// MAIN EXPORT
+// ============================================================================
 
 export async function generateSkillFiles(
   docs: ParsedDoc[],
@@ -345,19 +542,53 @@ export async function generateSkillFiles(
     mcpContent = await fetchMcpToolsDocs();
   }
 
-  // Write SKILL.md
-  const skillContent = generateSkillMd(docs, mcpContent !== null, contractDocs, repoConfigs);
+  const hasMcp = mcpContent !== null;
+  const hasContracts = contractDocs.length > 0;
+
+  // 1. Write SKILL.md (concise, <500 lines)
+  const skillContent = generateSkillMd(docs, hasMcp, contractDocs, repoConfigs);
   await fs.writeFile(path.join(skillDir, 'SKILL.md'), skillContent);
 
-  // Write doc files directly in skill folder
+  const skillLineCount = skillContent.split('\n').length;
+  console.log(chalk.dim(`   SKILL.md: ${skillLineCount} lines`));
+
+  // 2. Write NAV-docs.md (full documentation tree)
+  const navDocsContent = generateNavDocs(docs, hasMcp);
+  await fs.writeFile(path.join(skillDir, 'NAV-docs.md'), navDocsContent);
+  console.log(chalk.dim(`   NAV-docs.md: ${navDocsContent.split('\n').length} lines`));
+
+  // 3. Write NAV files for smart contracts
+  if (hasContracts) {
+    // Overview file
+    const navSmartContractsContent = generateNavSmartContracts(contractDocs, repoConfigs);
+    await fs.writeFile(path.join(skillDir, 'NAV-smart-contracts.md'), navSmartContractsContent);
+    console.log(chalk.dim(`   NAV-smart-contracts.md: ${navSmartContractsContent.split('\n').length} lines`));
+
+    // Per-repo NAV files
+    for (const repoConfig of repoConfigs) {
+      const repoContractDocs = contractDocs.filter(
+        (d) => d.subcategories[0] === repoConfig.name
+      );
+      if (repoContractDocs.length === 0) continue;
+
+      const navContent = generateNavContracts(contractDocs, repoConfig);
+      if (navContent) {
+        const navFileName = `NAV-${repoConfig.name}.md`;
+        await fs.writeFile(path.join(skillDir, navFileName), navContent);
+        console.log(chalk.dim(`   ${navFileName}: ${navContent.split('\n').length} lines`));
+      }
+    }
+  }
+
+  // 4. Write doc files directly in skill folder
   await writeDocFiles(docs, skillDir);
 
-  // Write contract doc files
-  if (contractDocs.length > 0) {
+  // 5. Write contract doc files
+  if (hasContracts) {
     await writeDocFiles(contractDocs, skillDir);
   }
 
-  // Write MCP Tools docs if fetched
+  // 6. Write MCP Tools docs if fetched
   if (mcpContent) {
     const mcpDir = path.join(skillDir, 'arbitrum-mcp-tools');
     await fs.mkdir(mcpDir, { recursive: true });

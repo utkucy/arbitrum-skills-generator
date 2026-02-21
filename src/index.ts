@@ -219,16 +219,20 @@ async function main(): Promise<void> {
     console.log('');
     console.log(chalk.bold.white('Generated structure:'));
     console.log(chalk.dim('  ') + chalk.cyan(skillDir + '/'));
-    console.log(chalk.dim('     ├── ') + chalk.white('SKILL.md'));
+    console.log(chalk.dim('     ├── ') + chalk.white('SKILL.md') + chalk.dim(' (concise, <500 lines)'));
+    console.log(chalk.dim('     ├── ') + chalk.yellow('NAV-docs.md') + chalk.dim(' (full doc index)'));
+    if (contractDocs.length > 0) {
+      console.log(chalk.dim('     ├── ') + chalk.yellow('NAV-smart-contracts.md') + chalk.dim(' (contracts overview)'));
+      console.log(chalk.dim('     ├── ') + chalk.yellow('NAV-openzeppelin-stylus.md'));
+      console.log(chalk.dim('     ├── ') + chalk.yellow('NAV-stylus-sdk.md'));
+      console.log(chalk.dim('     ├── ') + chalk.yellow('NAV-nitro-contracts.md'));
+    }
     console.log(chalk.dim('     ├── ') + chalk.cyan('stylus/'));
     console.log(chalk.dim('     ├── ') + chalk.cyan('sdk/'));
     console.log(chalk.dim('     ├── ') + chalk.cyan('run-arbitrum-node/'));
     console.log(chalk.dim('     ├── ') + chalk.cyan('build-decentralized-apps/'));
     if (contractDocs.length > 0) {
       console.log(chalk.dim('     ├── ') + chalk.cyan('smart-contracts/'));
-      console.log(chalk.dim('     │   ├── ') + chalk.cyan('openzeppelin-stylus/'));
-      console.log(chalk.dim('     │   ├── ') + chalk.cyan('stylus-sdk/'));
-      console.log(chalk.dim('     │   └── ') + chalk.cyan('nitro-contracts/'));
     }
     console.log(chalk.dim('     └── ...'));
     console.log('');
