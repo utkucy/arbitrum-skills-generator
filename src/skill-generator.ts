@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import chalk from 'chalk';
 import type { ParsedDoc, CategoryNode, GeneratorConfig, RepoConfig } from './types.js';
 
 const MCP_TOOLS_URL = 'https://arbitrum-mcp-tools.gitbook.io/arbitrum-mcp-tools-docs/llms-full.txt';
@@ -171,17 +172,17 @@ async function writeDocFiles(docs: ParsedDoc[], skillDir: string): Promise<void>
 
 async function fetchMcpToolsDocs(): Promise<string | null> {
   try {
-    console.log('   Fetching Arbitrum MCP Tools documentation...');
+    console.log(chalk.dim('   Fetching Arbitrum MCP Tools documentation...'));
     const response = await fetch(MCP_TOOLS_URL);
     if (!response.ok) {
-      console.log(`   ⚠ Failed to fetch MCP Tools docs: ${response.status}`);
+      console.log(chalk.yellow(`   ⚠ Failed to fetch MCP Tools docs: ${response.status}`));
       return null;
     }
     const content = await response.text();
-    console.log('   ✓ MCP Tools documentation fetched');
+    console.log(chalk.green('   ✓ MCP Tools documentation fetched'));
     return content;
   } catch (error) {
-    console.log(`   ⚠ Failed to fetch MCP Tools docs: ${error instanceof Error ? error.message : error}`);
+    console.log(chalk.yellow(`   ⚠ Failed to fetch MCP Tools docs: ${error instanceof Error ? error.message : error}`));
     return null;
   }
 }
@@ -363,5 +364,5 @@ export async function generateSkillFiles(
     await fs.writeFile(path.join(mcpDir, 'index.md'), `# Arbitrum MCP Tools\n\n${mcpContent}`);
   }
 
-  console.log(`\n✅ Skill files generated in: ${skillDir}`);
+  console.log('\n' + chalk.green('✓ Skill files generated in: ') + chalk.white(skillDir));
 }

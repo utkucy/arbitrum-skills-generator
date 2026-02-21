@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import chalk from 'chalk';
 import type { ParsedDoc, RepoConfig, ScanPath } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -15,7 +16,7 @@ export async function cloneOrUpdateRepo(config: RepoConfig, contractsDir: string
   try {
     await fs.stat(gitDir);
     // .git exists — re-clone to update
-    console.log(`   Re-cloning ${config.name}...`);
+    console.log(chalk.yellow(`   Re-cloning ${chalk.cyan(config.name)}...`));
     await fs.rm(repoDir, { recursive: true, force: true });
     await fs.mkdir(contractsDir, { recursive: true });
     await execFileAsync('git', ['clone', '--depth', '1', config.repoUrl, repoDir], { timeout: 120000 });
@@ -24,10 +25,10 @@ export async function cloneOrUpdateRepo(config: RepoConfig, contractsDir: string
     try {
       // Check if directory exists without .git (already cleaned)
       await fs.stat(repoDir);
-      console.log(`   Using cached ${config.name}`);
+      console.log(chalk.dim(`   Using cached ${chalk.cyan(config.name)}`));
     } catch {
       // Fresh clone
-      console.log(`   Cloning ${config.name}...`);
+      console.log(chalk.yellow(`   Cloning ${chalk.cyan(config.name)}...`));
       await fs.mkdir(contractsDir, { recursive: true });
       await execFileAsync('git', ['clone', '--depth', '1', config.repoUrl, repoDir], { timeout: 120000 });
       await fs.rm(gitDir, { recursive: true, force: true });
@@ -264,7 +265,7 @@ export async function parseRepo(
         },
       });
     } catch (error) {
-      console.error(`   ⚠ Failed to parse ${file}:`, error instanceof Error ? error.message : error);
+      console.error(chalk.yellow(`   ⚠ Failed to parse ${file}:`), chalk.dim(error instanceof Error ? error.message : String(error)));
     }
   }
 
@@ -279,15 +280,15 @@ export async function parseAllRepos(
   const allDocs: ParsedDoc[] = [];
 
   for (const config of configs) {
-    console.log(`\n   [${config.name}] ${config.displayName}`);
+    console.log(`\n   ${chalk.bold.cyan(`[${config.name}]`)} ${chalk.white(config.displayName)}`);
     try {
       const docs = await parseRepo(config, contractsDir, (current, total, file) => {
         onProgress?.(config.name, current, total, file);
       });
       allDocs.push(...docs);
-      console.log(`\n   ✓ ${config.name}: ${docs.length} files parsed`);
+      console.log(chalk.green(`\n   ✓ ${config.name}: ${docs.length} files parsed`));
     } catch (error) {
-      console.log(`\n   ⚠ ${config.name}: Failed - ${error instanceof Error ? error.message : error}`);
+      console.log(chalk.red(`\n   ✗ ${config.name}: Failed - ${error instanceof Error ? error.message : error}`));
     }
   }
 

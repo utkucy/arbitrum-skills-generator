@@ -1,5 +1,13 @@
 import type { RepoConfig } from './types.js';
 
+export const DOCS_REPO_CONFIG: RepoConfig = {
+  name: 'arbitrum-docs',
+  repoUrl: 'https://github.com/OffchainLabs/arbitrum-docs.git',
+  displayName: 'Arbitrum Documentation',
+  description: 'Official Arbitrum documentation',
+  scanPaths: [], // Docs parsing is handled by parser.ts, not the source-parser pipeline
+};
+
 export const REPO_CONFIGS: RepoConfig[] = [
   {
     name: 'openzeppelin-stylus',

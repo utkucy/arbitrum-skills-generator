@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import chalk from 'chalk';
 import type { ParsedDoc } from './types.js';
 
 const IGNORED_DIRS = ['node_modules', '.git', 'partials', 'i18n', 'src', 'components'];
@@ -165,7 +166,7 @@ export async function parseAllDocs(
         docs.push(doc);
       }
     } catch (error) {
-      console.error(`Failed to parse ${file}:`, error instanceof Error ? error.message : error);
+      console.error(chalk.yellow(`   ⚠ Failed to parse ${file}:`), chalk.dim(error instanceof Error ? error.message : String(error)));
     }
   }
 

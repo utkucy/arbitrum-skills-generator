@@ -1,17 +1,19 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import chalk from 'chalk';
 import { parseAllDocs } from './parser.js';
 import { generateSkillFiles } from './skill-generator.js';
-import { parseAllRepos } from './source-parser.js';
-import { REPO_CONFIGS } from './repo-config.js';
+import { parseAllRepos, cloneOrUpdateRepo } from './source-parser.js';
+import { REPO_CONFIGS, DOCS_REPO_CONFIG } from './repo-config.js';
 import type { GeneratorConfig, ParsedDoc } from './types.js';
 
 function printUsage(): void {
   console.log(`
-Usage: npm run generate -- <docs-path> [options]
+Usage: npm run generate -- [docs-path] [options]
 
 Arguments:
-  <docs-path>          Path to the documentation folder (e.g., ./arbitrum-docs/docs)
+  [docs-path]          Path to the documentation folder (optional)
+                       If omitted, arbitrum-docs repo is auto-cloned to .repos/
 
 Options:
   --output, -o         Output directory (default: ./output)
@@ -22,10 +24,10 @@ Options:
   --help, -h           Show this help message
 
 Examples:
-  npm run generate -- ./arbitrum-docs/docs
+  npm run generate                                  Auto-clone docs + contracts
+  npm run generate -- ./arbitrum-docs/docs           Use local docs path
   npm run generate -- ./arbitrum-docs/docs --output ./my-output
-  npm run generate -- ./arbitrum-docs/docs --ignore-contracts
-  npm run generate -- /path/to/docs -o ./output -n my-skill
+  npm run generate -- --ignore-contracts             Auto-clone docs only
 `);
 }
 
@@ -46,13 +48,13 @@ function parseArgs(args: string[]): GeneratorConfig | null {
     } else if (arg === '--output' || arg === '-o') {
       outputDir = args[++i];
       if (!outputDir) {
-        console.error('Error: --output requires a path');
+        console.error(chalk.red('Error: --output requires a path'));
         return null;
       }
     } else if (arg === '--name' || arg === '-n') {
       skillName = args[++i];
       if (!skillName) {
-        console.error('Error: --name requires a value');
+        console.error(chalk.red('Error: --name requires a value'));
         return null;
       }
     } else if (arg === '--ignore-mcp') {
@@ -62,24 +64,18 @@ function parseArgs(args: string[]): GeneratorConfig | null {
     } else if (arg === '--contracts-dir') {
       contractsDir = args[++i];
       if (!contractsDir) {
-        console.error('Error: --contracts-dir requires a path');
+        console.error(chalk.red('Error: --contracts-dir requires a path'));
         return null;
       }
     } else if (!arg.startsWith('-')) {
       positionalArgs.push(arg);
     } else {
-      console.error(`Unknown option: ${arg}`);
+      console.error(chalk.red(`Unknown option: ${arg}`));
       return null;
     }
   }
 
-  if (positionalArgs.length === 0) {
-    console.error('Error: docs-path is required');
-    printUsage();
-    return null;
-  }
-
-  const docsPath = path.resolve(positionalArgs[0]);
+  const docsPath = positionalArgs.length > 0 ? path.resolve(positionalArgs[0]) : '';
 
   return {
     docsPath,
@@ -105,14 +101,14 @@ function createProgressBar(current: number, total: number, width: number = 30): 
   const percentage = current / total;
   const filled = Math.round(width * percentage);
   const empty = width - filled;
-  const bar = '█'.repeat(filled) + '░'.repeat(empty);
-  return `[${bar}] ${current}/${total}`;
+  const bar = chalk.cyan('█'.repeat(filled)) + chalk.gray('░'.repeat(empty));
+  return `[${bar}] ${chalk.white(`${current}/${total}`)}`;
 }
 
 async function main(): Promise<void> {
-  console.log('╔══════════════════════════════════════════════════════════════╗');
-  console.log('║           Arbitrum Skill Generator                           ║');
-  console.log('╚══════════════════════════════════════════════════════════════╝');
+  console.log(chalk.cyan('╔══════════════════════════════════════════════════════════════╗'));
+  console.log(chalk.cyan('║') + chalk.bold.white('           Arbitrum Skill Generator                           ') + chalk.cyan('║'));
+  console.log(chalk.cyan('╚══════════════════════════════════════════════════════════════╝'));
   console.log('');
 
   const config = parseArgs(process.argv.slice(2));
@@ -120,25 +116,33 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Auto-clone arbitrum-docs if no docs-path provided
+  if (!config.docsPath) {
+    console.log(chalk.yellow('No docs-path provided — auto-cloning arbitrum-docs...'));
+    console.log('');
+    const repoDir = await cloneOrUpdateRepo(DOCS_REPO_CONFIG, config.contractsDir);
+    config.docsPath = path.join(repoDir, 'docs');
+  }
+
   // Verify docs path exists
   try {
     const stat = await fs.stat(config.docsPath);
     if (!stat.isDirectory()) {
-      console.error(`Error: ${config.docsPath} is not a directory`);
+      console.error(chalk.red(`Error: ${config.docsPath} is not a directory`));
       process.exit(1);
     }
   } catch {
-    console.error(`Error: ${config.docsPath} does not exist`);
+    console.error(chalk.red(`Error: ${config.docsPath} does not exist`));
     process.exit(1);
   }
 
-  console.log('Configuration:');
-  console.log(`  Docs Path:       ${config.docsPath}`);
-  console.log(`  Output:          ${config.outputDir}/${config.skillName}/`);
-  console.log(`  Include MCP:     ${!config.ignoreMcp}`);
-  console.log(`  Include Contracts: ${!config.ignoreContracts}`);
+  console.log(chalk.bold.white('Configuration:'));
+  console.log(chalk.dim('  Docs Path:       ') + chalk.white(config.docsPath));
+  console.log(chalk.dim('  Output:          ') + chalk.white(`${config.outputDir}/${config.skillName}/`));
+  console.log(chalk.dim('  Include MCP:     ') + (!config.ignoreMcp ? chalk.green('true') : chalk.red('false')));
+  console.log(chalk.dim('  Include Contracts: ') + (!config.ignoreContracts ? chalk.green('true') : chalk.red('false')));
   if (!config.ignoreContracts) {
-    console.log(`  Contracts Dir:   ${config.contractsDir}`);
+    console.log(chalk.dim('  Contracts Dir:   ') + chalk.white(config.contractsDir));
   }
   console.log('');
 
@@ -149,7 +153,7 @@ async function main(): Promise<void> {
     const totalSteps = config.ignoreContracts ? 2 : 3;
     let step = 1;
 
-    console.log(`📋 Step ${step}/${totalSteps}: Parsing documentation files...`);
+    console.log(chalk.bold.blue(`Step ${step}/${totalSteps}: Parsing documentation files...`));
 
     let lastUpdate = 0;
     const docs = await parseAllDocs(config.docsPath, (current, total, file) => {
@@ -161,7 +165,7 @@ async function main(): Promise<void> {
     });
 
     console.log('\n');
-    console.log(`   ✓ Parsed ${docs.length} documentation files`);
+    console.log(chalk.green(`   ✓ Parsed ${docs.length} documentation files`));
     console.log('');
     step++;
 
@@ -169,7 +173,7 @@ async function main(): Promise<void> {
     let contractDocs: ParsedDoc[] = [];
 
     if (!config.ignoreContracts) {
-      console.log(`📦 Step ${step}/${totalSteps}: Cloning and parsing smart contract repos...`);
+      console.log(chalk.bold.yellow(`Step ${step}/${totalSteps}: Cloning and parsing smart contract repos...`));
 
       contractDocs = await parseAllRepos(REPO_CONFIGS, config.contractsDir, (repo, current, total, file) => {
         const now = Date.now();
@@ -180,27 +184,27 @@ async function main(): Promise<void> {
       });
 
       console.log('');
-      console.log(`   ✓ Total contract files: ${contractDocs.length}`);
+      console.log(chalk.green(`   ✓ Total contract files: ${contractDocs.length}`));
       console.log('');
       step++;
     }
 
     // Step 3: Generate skill files
-    console.log(`📝 Step ${step}/${totalSteps}: Generating skill files...`);
+    console.log(chalk.bold.magenta(`Step ${step}/${totalSteps}: Generating skill files...`));
     await generateSkillFiles(docs, config, contractDocs, REPO_CONFIGS);
 
     const totalTime = Date.now() - startTime;
     const skillDir = path.join(config.outputDir, config.skillName);
 
     console.log('');
-    console.log('╔══════════════════════════════════════════════════════════════╗');
-    console.log('║                    Generation Complete!                       ║');
-    console.log('╚══════════════════════════════════════════════════════════════╝');
+    console.log(chalk.green('╔══════════════════════════════════════════════════════════════╗'));
+    console.log(chalk.green('║') + chalk.bold.green('                    Generation Complete!                       ') + chalk.green('║'));
+    console.log(chalk.green('╚══════════════════════════════════════════════════════════════╝'));
     console.log('');
-    console.log(`Total time:      ${formatDuration(totalTime)}`);
-    console.log(`Documents:       ${docs.length}`);
+    console.log(chalk.dim('Total time:      ') + chalk.bold.white(formatDuration(totalTime)));
+    console.log(chalk.dim('Documents:       ') + chalk.bold.white(String(docs.length)));
     if (contractDocs.length > 0) {
-      console.log(`Contract files:  ${contractDocs.length}`);
+      console.log(chalk.dim('Contract files:  ') + chalk.bold.white(String(contractDocs.length)));
 
       // Show per-repo stats
       const repoStats = new Map<string, number>();
@@ -209,31 +213,31 @@ async function main(): Promise<void> {
         repoStats.set(repo, (repoStats.get(repo) || 0) + 1);
       }
       for (const [repo, count] of repoStats) {
-        console.log(`  - ${repo}: ${count} files`);
+        console.log(chalk.dim('  - ') + chalk.cyan(repo) + chalk.dim(': ') + chalk.white(String(count)) + chalk.dim(' files'));
       }
     }
     console.log('');
-    console.log('Generated structure:');
-    console.log(`  📁 ${skillDir}/`);
-    console.log('     ├── SKILL.md');
-    console.log('     ├── stylus/');
-    console.log('     ├── sdk/');
-    console.log('     ├── run-arbitrum-node/');
-    console.log('     ├── build-decentralized-apps/');
+    console.log(chalk.bold.white('Generated structure:'));
+    console.log(chalk.dim('  ') + chalk.cyan(skillDir + '/'));
+    console.log(chalk.dim('     ├── ') + chalk.white('SKILL.md'));
+    console.log(chalk.dim('     ├── ') + chalk.cyan('stylus/'));
+    console.log(chalk.dim('     ├── ') + chalk.cyan('sdk/'));
+    console.log(chalk.dim('     ├── ') + chalk.cyan('run-arbitrum-node/'));
+    console.log(chalk.dim('     ├── ') + chalk.cyan('build-decentralized-apps/'));
     if (contractDocs.length > 0) {
-      console.log('     ├── smart-contracts/');
-      console.log('     │   ├── openzeppelin-stylus/');
-      console.log('     │   ├── stylus-sdk/');
-      console.log('     │   └── nitro-contracts/');
+      console.log(chalk.dim('     ├── ') + chalk.cyan('smart-contracts/'));
+      console.log(chalk.dim('     │   ├── ') + chalk.cyan('openzeppelin-stylus/'));
+      console.log(chalk.dim('     │   ├── ') + chalk.cyan('stylus-sdk/'));
+      console.log(chalk.dim('     │   └── ') + chalk.cyan('nitro-contracts/'));
     }
-    console.log('     └── ...');
+    console.log(chalk.dim('     └── ...'));
     console.log('');
-    console.log('Usage:');
-    console.log(`  Copy to Claude Code skills: cp -r ${skillDir} ~/.claude/skills/`);
+    console.log(chalk.bold.white('Usage:'));
+    console.log(chalk.dim('  Copy to Claude Code skills: ') + chalk.yellow(`cp -r ${skillDir} ~/.claude/skills/`));
     console.log('');
   } catch (error) {
     console.error('');
-    console.error('❌ Error:', error instanceof Error ? error.message : error);
+    console.error(chalk.bold.red('Error:'), chalk.red(error instanceof Error ? error.message : String(error)));
     process.exit(1);
   }
 }
