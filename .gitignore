@@ -1,0 +1,12 @@
+node_modules/
+
+output/
+.repos/
+*.log
+.DS_Store
+.env
+.env.local
+
+.claude
+.codex
+dist

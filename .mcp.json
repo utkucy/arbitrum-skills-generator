@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "arbitrum": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "arbitrum-mcp-tools",
+        "serve"
+      ]
+    }
+  }
+}
