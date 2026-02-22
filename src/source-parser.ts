@@ -9,6 +9,75 @@ const execFileAsync = promisify(execFile);
 
 const IGNORED_DIRS = ['target', 'node_modules', '.git', 'out', 'cache', 'artifacts', 'build'];
 
+// Files that add no learning value to the skill knowledge base
+const SKIP_FILENAMES = new Set([
+  'rust-toolchain.toml',
+  'Stylus.toml',
+]);
+
+// Directory paths containing test/mock files (matched against relative path from repo root)
+const SKIP_DIR_PATTERNS = [
+  /\/mocks\//,        // nitro-contracts/src/mocks/
+  /\/test-helpers\//,  // nitro-contracts/src/test-helpers/
+];
+
+// Filename patterns for test files
+const SKIP_FILE_PATTERNS = [
+  /integration_test\.rs$/,  // stylus-sdk examples integration tests
+  /^test_/i,                // test_ prefixed files
+];
+
+/**
+ * Check if a file should be skipped based on filename and path patterns.
+ * Filters out: config boilerplate, mock/test contracts, integration tests.
+ */
+function shouldSkipFile(relativeToRepo: string): boolean {
+  const basename = path.basename(relativeToRepo);
+
+  // Skip known boilerplate filenames
+  if (SKIP_FILENAMES.has(basename)) return true;
+
+  // Skip files in test/mock directories
+  for (const pattern of SKIP_DIR_PATTERNS) {
+    if (pattern.test(relativeToRepo)) return true;
+  }
+
+  // Skip test file patterns
+  for (const pattern of SKIP_FILE_PATTERNS) {
+    if (pattern.test(basename)) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Check if a Cargo.toml file is just boilerplate (no meaningful learning content).
+ * Keeps Cargo.toml files that contain useful documentation or complex workspace configs.
+ */
+function isBoilerplateCargo(content: string): boolean {
+  // If it has fewer than 30 lines, it's likely just a basic manifest
+  const lines = content.split('\n').filter(l => l.trim().length > 0);
+  return lines.length < 30;
+}
+
+/**
+ * Check if a mod.rs file only contains `pub mod` / `mod` re-exports with no logic.
+ */
+function isModReexportOnly(content: string): boolean {
+  const lines = content.split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0 && !l.startsWith('//') && !l.startsWith('#'));
+
+  if (lines.length === 0) return true;
+
+  // Every non-empty, non-comment line should be a mod declaration or use statement
+  return lines.every(l =>
+    /^(pub\s+)?mod\s+\w+;$/.test(l) ||
+    /^(pub\s+)?use\s+/.test(l) ||
+    /^(pub\s+)?extern\s+crate\s+/.test(l)
+  );
+}
+
 export async function cloneOrUpdateRepo(config: RepoConfig, contractsDir: string): Promise<string> {
   const repoDir = path.join(contractsDir, config.name);
   const gitDir = path.join(repoDir, '.git');
@@ -217,10 +286,17 @@ export async function parseRepo(
   }
 
   // Parse each file
+  let skipped = 0;
   for (let i = 0; i < allFiles.length; i++) {
     const { file, scanPath } = allFiles[i];
     const relativeToRepo = path.relative(repoDir, file);
     onProgress?.(i + 1, allFiles.length, relativeToRepo);
+
+    // Path/filename-based skip
+    if (shouldSkipFile(relativeToRepo)) {
+      skipped++;
+      continue;
+    }
 
     try {
       const content = await fs.readFile(file, 'utf-8');
@@ -228,6 +304,17 @@ export async function parseRepo(
 
       const ext = path.extname(file).toLowerCase();
       const lang = getLanguageForFile(file, scanPath.language);
+      const basename = path.basename(file);
+
+      // Content-based filtering for specific file types
+      if (basename === 'Cargo.toml' && isBoilerplateCargo(content)) {
+        skipped++;
+        continue;
+      }
+      if (basename === 'mod.rs' && isModReexportOnly(content)) {
+        skipped++;
+        continue;
+      }
       const outputRelPath = path.join('smart-contracts', config.name, relativeToRepo.replace(/\.[^.]+$/, '.md'));
       const dirParts = path.dirname(relativeToRepo).split(path.sep).filter(Boolean);
 
@@ -267,6 +354,10 @@ export async function parseRepo(
     } catch (error) {
       console.error(chalk.yellow(`   ⚠ Failed to parse ${file}:`), chalk.dim(error instanceof Error ? error.message : String(error)));
     }
+  }
+
+  if (skipped > 0) {
+    console.log(chalk.dim(`\n   Filtered ${skipped} files (boilerplate, tests, mocks)`));
   }
 
   return docs;

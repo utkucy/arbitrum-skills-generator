@@ -195,7 +195,7 @@ Source files shorter than 10 characters are filtered out.
 
 |                |                                                                                                              |
 | -------------- | ------------------------------------------------------------------------------------------------------------ |
-| **Source**     | [arbitrum-mcp-tools.gitbook.io](https://arbitrum-mcp-tools.gitbook.io/arbitrum-mcp-tools-docs/llms-full.txt) |
+| **Source**     | [arbitrum-ai-hub.gitbook.io](https://arbitrum-ai-hub.gitbook.io/docs/llms-full.txt) |
 | **Method**     | HTTP GET (plain text)                                                                                        |
 | **Written to** | `arbitrum-mcp-tools/index.md`                                                                                |
 

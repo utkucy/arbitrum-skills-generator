@@ -3,7 +3,7 @@ import * as path from 'path';
 import chalk from 'chalk';
 import type { ParsedDoc, CategoryNode, GeneratorConfig, RepoConfig } from './types.js';
 
-const MCP_TOOLS_URL = 'https://arbitrum-mcp-tools.gitbook.io/arbitrum-mcp-tools-docs/llms-full.txt';
+const MCP_TOOLS_URL = 'https://arbitrum-ai-hub.gitbook.io/docs/llms-full.txt';
 
 const CATEGORY_DESCRIPTIONS: Record<string, string> = {
   'arbitrum-bridge': 'Token bridging between Ethereum and Arbitrum chains',
@@ -221,7 +221,7 @@ function generateNavContracts(
     lines.push('## Contents');
     for (const dir of topDirs) {
       const child = repoNode.children.get(dir)!;
-      lines.push(`- ${child.title} (${countDocs(child)} files)`);
+      lines.push(`- ${child.title}`);
     }
     lines.push('');
   }
@@ -354,7 +354,7 @@ function generateSkillMd(
 
     lines.push(`### ${categoryNode.title}`);
     if (description) {
-      lines.push(`*${description}* (${docCount} files)`);
+      lines.push(`*${description}*`);
     }
     lines.push('');
 
@@ -391,7 +391,7 @@ function generateSkillMd(
 
       lines.push(`### ${repoConfig.displayName}`);
       lines.push(`*${repoConfig.description}*`);
-      lines.push(`- **${docCount} files** — Full index: [${navFileName}](${navFileName})`);
+      lines.push(`- Full index: [${navFileName}](${navFileName})`);
 
       // Show top-level directory structure only
       const topDirs = [...repoNode.children.keys()].sort();
@@ -462,17 +462,15 @@ function generateNavSmartContracts(
     lines.push(`## ${repoConfig.displayName}`);
     lines.push(`*${repoConfig.description}*`);
     lines.push('');
-    lines.push(`**${docCount} files** — Detailed index: [${navFileName}](${navFileName})`);
+    lines.push(`Detailed index: [${navFileName}](${navFileName})`);
     lines.push('');
 
     // Show top-level structure
     const topDirs = [...repoNode.children.keys()].sort();
     if (topDirs.length > 0) {
-      lines.push('| Directory | Files |');
-      lines.push('|-----------|-------|');
       for (const dir of topDirs) {
         const child = repoNode.children.get(dir)!;
-        lines.push(`| ${child.title} | ${countDocs(child)} |`);
+        lines.push(`- ${child.title}`);
       }
       lines.push('');
     }
@@ -503,6 +501,10 @@ async function writeDocFiles(docs: ParsedDoc[], skillDir: string): Promise<void>
   }
 }
 
+// Section markers in the combined GitBook llms-full.txt
+const MCP_SECTION_START = '# Setup Guide';
+const MCP_SECTION_END = '# Overview 📖';
+
 async function fetchMcpToolsDocs(): Promise<string | null> {
   try {
     console.log(chalk.dim('   Fetching Arbitrum MCP Tools documentation...'));
@@ -511,7 +513,21 @@ async function fetchMcpToolsDocs(): Promise<string | null> {
       console.log(chalk.yellow(`   ⚠ Failed to fetch MCP Tools docs: ${response.status}`));
       return null;
     }
-    const content = await response.text();
+    const fullContent = await response.text();
+
+    // Extract only the MCP Tools section from the combined document
+    const startIdx = fullContent.indexOf(MCP_SECTION_START);
+    const endIdx = fullContent.indexOf(MCP_SECTION_END, startIdx);
+
+    if (startIdx === -1) {
+      console.log(chalk.yellow('   ⚠ Could not find MCP Tools section start marker'));
+      return null;
+    }
+
+    const content = endIdx === -1
+      ? fullContent.slice(startIdx)
+      : fullContent.slice(startIdx, endIdx).trimEnd();
+
     console.log(chalk.green('   ✓ MCP Tools documentation fetched'));
     return content;
   } catch (error) {
