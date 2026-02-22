@@ -258,6 +258,17 @@ function generateSkillMd(
   lines.push('# Arbitrum Development Knowledge Base');
   lines.push('');
 
+  // --- User Responsibility Notice ---
+  lines.push('## User Responsibility Notice');
+  lines.push('');
+  lines.push('**This skill provides reference documentation only.** All information is sourced from official Arbitrum documentation, open-source smart contract repositories, and MCP tools documentation. However:');
+  lines.push('');
+  lines.push('- **You are responsible for verifying all information** before using it in production. AI responses based on this skill may be incomplete, outdated, or misinterpreted.');
+  lines.push('- **On-chain actions are irreversible.** If you use MCP tools referenced in this skill to deploy contracts, send transactions, or interact with protocols, always confirm the action, parameters, and target network before proceeding.');
+  lines.push('- **Smart contract code included here is for reference.** Do not deploy any contract code without independent review, testing on testnets, and security auditing.');
+  lines.push('- **Never expose private keys or sensitive credentials** in prompts or conversations with AI assistants.');
+  lines.push('');
+
   // --- Search Instructions (concise) ---
   lines.push('## Search Instructions');
   lines.push('');
@@ -274,6 +285,7 @@ function generateSkillMd(
   lines.push('- Put the most important information first (answer at top, details below)');
   lines.push('- Follow correct step order for procedural responses');
   lines.push('- Use **bold** for key values the user needs to spot quickly');
+  lines.push('- **Always warn the user** when a suggested action involves on-chain execution, gas costs, or private key usage');
   lines.push('');
 
   // --- Decision Guide ---
